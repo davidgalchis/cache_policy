@@ -1,0 +1,240 @@
+{
+    "components": {
+        "cache_policy": {
+            "type": "ext",
+            "displayname": "CK CloudFront Cache Policy",
+            "description": "Deploys an AWS CloudFront Cache Policy. Cache policies can be applied to one or more CloudFront Distribution Behaviors for one or more CloudFront Distributions.",
+            "cloud": "AWS",
+            "ck_plugin_tier": 3,
+            "resources": ["AWS::CloudFront::CachePolicy"],
+            "policy": {
+                "Version": "2012-10-17",
+                "Statement": [{
+                    "Sid": "Vis",
+                    "Effect": "Allow",
+                    "Action": [
+                        "elasticloadbalancing:DeleteLoadBalancer",
+                        "elasticloadbalancing:DescribeLoadBalancerAttributes",
+                        "elasticloadbalancing:DescribeLoadBalancers",
+                        "elasticloadbalancing:RemoveTags",
+                        "elasticloadbalancing:CreateLoadBalancer",
+                        "elasticloadbalancing:DescribeTags",
+                        "elasticloadbalancing:AddTags",
+                        "elasticloadbalancing:SetSecurityGroups",
+                        "elasticloadbalancing:SetIpAddressType",
+                        "elasticloadbalancing:SetSubnets",
+                        "elasticloadbalancing:ModifyLoadBalancerAttributes"
+                    ],
+                    "Resource": "*"
+                }]
+            },
+            "input": {
+                "type": "object",
+                "required_properties": ["subnets", "security_groups"],
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "The name of the load balancer.",
+                        "common": true
+                    },
+                    "subnets": {
+                        "type": "array",
+                        "description": "The IDs of the subnets. You can specify only one subnet per Availability Zone. For Application Load Balancers you must specify subnets from at least two Availability Zones.",
+                        "items": {
+                            "type": "string",
+                            "description": "The ID of the subnet"
+                        },
+                        "common": true
+                    },
+                    "security_groups": {
+                        "type": "array",
+                        "description": "The IDs of the security groups for the load balancer.",
+                        "common": true,
+                        "items": {
+                            "type": "string",
+                            "description": "The ID of the security group"
+                        }
+                    },
+                    "tags": {
+                        "type": "object",
+                        "description": "The tags to attach to this load balancer",
+                        "common": true
+                    },
+                    "scheme": {
+                        "type": "string",
+                        "description": "Whether the load balancer IP addresses are resolvable publicly or only within a VPC.",
+                        "common": true,
+                        "default": "internal",
+                        "enum": ["internal", "internet-facing"]
+                    },
+                    "load_balancer_type": {
+                        "type": "string",
+                        "description": "The type of load balancer.",
+                        "common": true,
+                        "default": "application",
+                        "enum": ["application", "network", "gateway"]
+                    },
+                    "ip_address_type": {
+                        "type": "string",
+                        "description": "The type of load balancer.",
+                        "common": true,
+                        "default": "ipv4",
+                        "enum": ["ipv4", "dualstack"]
+                    },
+                    "deletion_protection_enabled": {
+                        "type": "boolean",
+                        "description": "Indicates whether deletion protection is enabled.",
+                        "default": false
+                    },
+                    "load_balancing_cross_zone_enabled": {
+                        "type": "boolean",
+                        "description": "Indicates whether cross-zone load balancing is enabled.",
+                        "default": true
+                    },
+                    "access_logs_s3_enabled": {
+                        "type": "boolean",
+                        "description": "Indicates whether access logs are enabled.",
+                        "default": false
+                    },
+                    "access_logs_s3_bucket": {
+                        "type": "string",
+                        "description": "The name of the S3 bucket for the access logs."
+                    },
+                    "access_logs_s3_prefix": {
+                        "type": "string",
+                        "description": "The prefix for the location in the S3 bucket for the access logs."
+                    },
+                    "ipv6_deny_all_igw_traffic": {
+                        "type": "boolean",
+                        "description": "Blocks internet gateway (IGW) access to the load balancer.",
+                        "default": false
+                    },
+                    "idle_timeout_timeout_seconds": {
+                        "type": "integer",
+                        "description": "The idle timeout value, in seconds.",
+                        "default": 60,
+                        "minimum": 1,
+                        "maximum": 4000
+                    },
+                    "routing_http_desync_mitigation_mode": {
+                        "type": "string",
+                        "description": "Determines how the load balancer handles requests that might pose a security risk to your application.",
+                        "default": "defensive",
+                        "enum": ["monitor", "defensive", "strictest"]
+                    },
+                    "routing_http_drop_invalid_header_fields_enabled": {
+                        "type": "boolean",
+                        "description": "Indicates whether HTTP headers with invalid header fields are removed by the load balancer (true) or routed to targets (false)",
+                        "default": false
+                    },
+                    "routing_http_preserve_host_header_enabled": {
+                        "type": "boolean",
+                        "description": "Indicates whether the Application Load Balancer should preserve the Host header in the HTTP request and send it to the target without any change.",
+                        "default": false
+                    },
+                    "routing_http_x_amzn_tls_version_and_cipher_suite_enabled": {
+                        "type": "boolean",
+                        "description": "Indicates whether the two headers (x-amzn-tls-version and x-amzn-tls-cipher-suite), which contain information about the negotiated TLS version and cipher suite, are added to the client request before sending it to the target.",
+                        "default": false
+                    },
+                    "routing_http_xff_client_port_enabled": {
+                        "type": "boolean",
+                        "description": "Indicates whether the X-Forwarded-For header should preserve the source port that the client used to connect to the load balancer.",
+                        "default": false
+                    }, 
+                    "routing_http_xff_header_processing_mode": {
+                        "type": "boolean",
+                        "description": "Enables you to modify, preserve, or remove the X-Forwarded-For header in the HTTP request before the Application Load Balancer sends the request to the target.",
+                        "default": "append",
+                        "enum": ["append", "preserve", "remove"]
+                    }, 
+                    "routing_http2_enabled": {
+                        "type": "boolean",
+                        "description": "Indicates whether HTTP/2 is enabled.",
+                        "default": true
+                    },
+                    "waf_fail_open_enabled": {
+                        "type": "boolean",
+                        "description": "Indicates whether to allow a WAF-enabled load balancer to route requests to targets if it is unable to forward the request to Amazon Web Services WAF. ",
+                        "default": false
+                    }
+                }
+            },
+            "props": {
+                "name": {
+                    "type": "string",
+                    "description": "The name of the load balancer."
+                },
+                "arn": {
+                    "type": "string",
+                    "description": "The Amazon Resource Name (ARN) of the load balancer."
+                },
+                "vpc_id": {
+                    "type": "string",
+                    "description": "The VPC ID of the target group."
+                },
+                "dns_name": {
+                    "type": "integer",
+                    "description": "The DNS name of the load balancer."
+                },
+                "canonical_hosted_zone_id": {
+                    "type": "string",
+                    "description": "The ID of the Amazon Route 53 hosted zone associated with the load balancer."
+                },
+                "load_balancer_type": {
+                    "type": "string",
+                    "description": "The type of load balancer."
+                },
+                "security_groups": {
+                    "type": "array",
+                    "description": "The IDs of the security groups for the load balancer.",
+                    "items": {
+                        "type": "string",
+                        "description": "The ID of the security group."
+                    }
+                },
+                "subnets": {
+                    "type": "array",
+                    "description": "Subnets associated with the load balancer. You can specify one subnet per Availability Zone.",
+                    "items": {
+                        "type": "string",
+                        "description": "The ID of the subnet"
+                    }
+                },
+                "scheme": {
+                    "type": "string",
+                    "description": "Whether the load balancer IP addresses are resolvable publicly or only within a VPC."
+                },
+                "tags": {
+                    "type": "object",
+                    "description": "The tags attached to this load balancer."
+                }
+
+            },
+            "examples": [
+                {
+                    "displayname": "Application Load Balancer",
+                    "notes": "Add the subnet and security group values for your VPC for a standard Application Load Balancer configuration. Default configuration is set to be internal to a VPC with the IPV4 IP address type.",
+                    "definition": {
+                        "type": "&alb.load_balancer",
+                        "subnets": ["subnet-1234567890EXAMPLE", "subnet-1234567890EXAMPLE"],
+                        "security_groups": ["sg-1234567890EXAMPLE"]
+                    }
+                },
+                {
+                    "displayname": "Application Load Balancer with Tags",
+                    "notes": "Add the \"tags\" parameter with a dictionary to add tags to the load balancer.",
+                    "definition": {
+                        "type": "&alb.load_balancer",
+                        "subnets": ["subnet-1234567890EXAMPLE", "subnet-1234567890EXAMPLE"],
+                        "security_groups": ["sg-1234567890EXAMPLE"],
+                        "tags": {
+                            "service": "user_service",
+                            "team": "applications"
+                        }
+                    }
+                }
+            ]
+        }
+    }
+}
