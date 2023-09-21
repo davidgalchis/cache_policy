@@ -209,7 +209,7 @@ def get_cache_policy(attributes, region, prev_state):
                 cache_policy_id = cache_policy_to_use.get("Id")
                 cache_policy_etag = response.get("ETag")
                 cache_policy_config = cache_policy_to_use.get("CachePolicyConfig")
-                eh.add_state({"cache_policy_id": cache_policy_id, "etag": cache_policy_etag, "region": region})
+                eh.add_state({"cache_policy_id": cache_policy_id, "cache_policy_etag": cache_policy_etag, "region": region})
                 existing_props = {
                     "id": cache_policy_id,
                     "name": cache_policy_config.get("Name"),
@@ -256,15 +256,16 @@ def create_cache_policy(attributes, region, prev_state):
         )
         cache_policy = response.get("CachePolicy")
         cache_policy_id = cache_policy.get("Id")
+        cache_policy_etag = response.get("Etag")
         cache_policy_config = cache_policy.get("CachePolicyConfig")
 
         eh.add_log("Created Cache Policy", cache_policy)
-        eh.add_state({"cache_policy_id": cache_policy_id, "etag": cache_policy_etag, "region": region})
+        eh.add_state({"cache_policy_id": cache_policy_id, "cache_policy_etag": cache_policy_etag, "region": region})
         props_to_add = {
             "id": cache_policy_id,
             "name": cache_policy_config.get("Name"),
             "description": cache_policy_config.get("Comment"),
-            "etag": response.get("ETag")
+            "etag": cache_policy_etag
         }
         eh.add_props(props_to_add)
         eh.add_links({"Cache Policy": gen_cache_policy_link(region, cache_policy_id=cache_policy_id)})
