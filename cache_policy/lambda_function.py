@@ -256,7 +256,7 @@ def create_cache_policy(attributes, region, prev_state):
         )
         cache_policy = response.get("CachePolicy")
         cache_policy_id = cache_policy.get("Id")
-        cache_policy_etag = response.get("Etag")
+        cache_policy_etag = response.get("ETag")
         cache_policy_config = cache_policy.get("CachePolicyConfig")
 
         eh.add_log("Created Cache Policy", cache_policy)
