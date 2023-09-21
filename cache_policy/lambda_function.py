@@ -84,10 +84,10 @@ def lambda_handler(event, context):
 
 
         ### ATTRIBUTES THAT CAN BE SET ON INITIAL CREATION
-        description = cdef.get("description")
+        description = cdef.get("description") or f"CloudKommand Managed Cache Policy {name}"
         default_ttl = cdef.get("default_ttl") or 86400
         max_ttl = cdef.get("max_ttl") or 31536000
-        min_ttl = cdef.get("min_ttl")
+        min_ttl = cdef.get("min_ttl") or 1
         enable_accept_encoded_gzip = cdef.get("enable_accept_encoded_gzip") or True
         enable_accept_encoded_brotli = cdef.get("enable_accept_encoded_brotli") or True
         header_behavior = cdef.get("header_behavior") or "none"
@@ -215,82 +215,32 @@ def get_cache_policy(attributes, region, prev_state):
                     "etag": response.get("ETag")
                 }
                 eh.add_props(existing_props)
-                eh.add_links({"Rule": gen_cache_policy_link(region, cache_policy_id=cache_policy_id)})
+                eh.add_links({"Cache Policy": gen_cache_policy_link(region, cache_policy_id=cache_policy_id)})
 
-                ### If the listener exists, then setup any followup tasks
-                populated_existing_attributes = remove_none_attributes(existing_props)
-                current_attributes = remove_none_attributes({
-                    "ListenerArn": str(populated_existing_attributes.get("listener_arn")) if populated_existing_attributes.get("listener_arn") else populated_existing_attributes.get("listener_arn"),
-                    "Priority": int(populated_existing_attributes.get("priority")) if populated_existing_attributes.get("priority") else str(populated_existing_attributes.get("priority")),
-                    "Conditions": conditions_to_formatted_conditions(reformatted_conditions) if reformatted_conditions else None,
-                    "Actions": [{
-                        "Type": str(populated_existing_attributes.get("action_type")) if populated_existing_attributes.get("action_type") else populated_existing_attributes.get("action_type"),
-                        "TargetGroupArn": str(populated_existing_attributes.get("target_group_arn")) if populated_existing_attributes.get("target_group_arn") else populated_existing_attributes.get("target_group_arn"),
-                    }]
-                })
-
-                comparable_attributes = {i:attributes[i] for i in attributes if i not in ['Tags', 'Priority']}
-                comparable_current_attributes = {i:current_attributes[i] for i in current_attributes if i not in ['Tags', 'Priority']}
-                if comparable_attributes != comparable_current_attributes:
+                ### If the cache policy exists, then setup any followup tasks
+                if attributes != cache_policy_config:
                     eh.add_op("update_cache_policy")
 
-                if attributes.get("Priority") != current_attributes.get("Priority"):
-                    eh.add_op("update_cache_policy_priority")
-
-                try:
-                    # Try to get the current tags
-                    response = client.describe_tags(ResourceArns=[cache_policy_id])
-                    eh.add_log("Got Tags")
-                    relevant_items = [item for item in response.get("TagDescriptions") if item.get("ResourceArn") == cache_policy_id]
-                    current_tags = {}
-
-                    # Parse out the current tags
-                    if len(relevant_items) > 0:
-                        relevant_item = relevant_items[0]
-                        if relevant_item.get("Tags"):
-                            current_tags = key_value_list_obj_to_compressed_dict(relevant_item.get("Tags"))
-                            # {item.get("Key") : item.get("Value") for item in relevant_item.get("Tags")}
-
-                    # If there are tags specified, figure out which ones need to be added and which ones need to be removed
-                    if attributes.get("Tags"):
-
-                        tags = attributes.get("Tags")
-                        formatted_tags = key_value_list_obj_to_compressed_dict(tags)
-                        # {item.get("Key") : item.get("Value") for item in tags}
-                        # Compare the current tags to the desired tags
-                        if formatted_tags != current_tags:
-                            remove_tags = [k for k in current_tags.keys() if k not in formatted_tags]
-                            add_tags = {k:v for k,v in formatted_tags.items() if v != current_tags.get(k)}
-                            if remove_tags:
-                                eh.add_op("remove_tags", remove_tags)
-                            if add_tags:
-                                eh.add_op("set_tags", add_tags)
-                    # If there are no tags specified, make sure to remove any straggler tags
-                    else:
-                        if current_tags:
-                            eh.add_op("remove_tags", list(current_tags.keys()))
-
-                # If the load balancer does not exist, some wrong has happened. Probably don't permanently fail though, try to continue.
-                except client.exceptions.RuleNotFoundException:
-                    eh.add_log("Listener Rule Not Found", {"arn": cache_policy_id})
-                    pass
-
             else:
-                eh.add_log("Listener Rule Does Not Exist", {"listener_arn": existing_cache_policy_id})
+                eh.add_log("Cache Policy Does Not Exist", {"cache_policy_id": existing_cache_policy_id})
                 eh.add_op("create_cache_policy")
                 return 0
-        # If there is no listener and there is an exception handle it here
-        except client.exceptions.RuleNotFoundException:
-            eh.add_log("Listener Rule Does Not Exist", {"cache_policy_id": existing_cache_policy_id})
+        # If there is no cache policy and there is an exception handle it here
+        except client.exceptions.NoSuchCachePolicy:
+            eh.add_log("Cache Policy Does Not Exist", {"cache_policy_id": existing_cache_policy_id})
+            eh.add_op("create_cache_policy")
+            return 0
+        except client.exceptions.AccessDenied: # I believe this should not happen unless the plugin has insufficient permissions
+            eh.add_log("You do you not have access to the specified cache policy. Please update the permissions and try again.", {"cache_policy_id": existing_cache_policy_id})
             eh.add_op("create_cache_policy")
             return 0
         except ClientError as e:
             print(str(e))
-            eh.add_log("Get Listener Rule Error", {"error": str(e)}, is_error=True)
-            eh.retry_error("Get Listener Rule Error", 10)
+            eh.add_log("Get Cache Policy Error", {"error": str(e)}, is_error=True)
+            eh.retry_error("Get Cache Policy Error", 10)
             return 0
     else:
-        eh.add_log("Listener Rule Does Not Exist", {"cache_policy_id": existing_cache_policy_id})
+        eh.add_log("Cache Policy Does Not Exist", {"cache_policy_id": existing_cache_policy_id})
         eh.add_op("create_cache_policy")
         return 0
 
@@ -300,226 +250,115 @@ def create_cache_policy(attributes, region, prev_state):
 
     try:
         response = client.create_cache_policy(**attributes)
-        cache_policy = response.get("Rules")[0]
-        cache_policy_id = cache_policy.get("RuleArn")
+        cache_policy = response.get("Cache Policy")
+        cache_policy_id = cache_policy.get("Id")
+        cache_policy_config = cache_policy.get("CachePolicyConfig")
 
-        eh.add_log("Created Listener Rule", cache_policy)
-        eh.add_state({"cache_policy_id": cache_policy.get("RuleArn"), "region": region})
+        eh.add_log("Created Cache Policy", cache_policy)
+        eh.add_state({"cache_policy_id": cache_policy_id, "region": region})
         props_to_add = {
-            "arn": cache_policy.get("RuleArn"),
-            "listener_arn": attributes.get("ListenerArn"),
-            "conditions": formatted_conditions_to_conditions(cache_policy.get("Conditions")),
-            "priority": cache_policy.get("Priority"),
-            "action_type": cache_policy.get("Actions", [{}])[0].get("Type"),
-            "target_group_arn": cache_policy.get("Actions", [{}])[0].get("TargetGroupArn"),
+            "id": cache_policy_id,
+            "name": cache_policy_config.get("Name"),
+            "description": cache_policy_config.get("Comment"),
+            "etag": response.get("ETag")
         }
         eh.add_props(props_to_add)
-        eh.add_links({"Rule": gen_cache_policy_link(region, cache_policy_id=cache_policy.get("RuleArn"))})
+        eh.add_links({"Cache Policy": gen_cache_policy_link(region, cache_policy_id=cache_policy_id)})
 
-        ### Once the listener cache_policy exists, then setup any followup tasks
+        ### Once the cache_policy exists, then setup any followup tasks
 
-        try:
-            # Try to get the current tags
-            response = client.describe_tags(ResourceArns=[cache_policy_id])
-            eh.add_log("Got Tags")
-            relevant_items = [item for item in response.get("TagDescriptions") if item.get("ResourceArn") == cache_policy_id]
-            current_tags = {}
+        # N/A, in the case of this plugin
 
-            # Parse out the current tags
-            if len(relevant_items) > 0:
-                relevant_item = relevant_items[0]
-                if relevant_item.get("Tags"):
-                    current_tags = key_value_list_obj_to_compressed_dict(relevant_item.get("Tags"))
-                    # {item.get("Key") : item.get("Value") for item in relevant_item.get("Tags")}
-
-            # If there are tags specified, figure out which ones need to be added and which ones need to be removed
-            if attributes.get("Tags"):
-
-                tags = attributes.get("Tags")
-                formatted_tags = key_value_list_obj_to_compressed_dict(tags)
-                # {item.get("Key") : item.get("Value") for item in tags}
-                # Compare the current tags to the desired tags
-                if formatted_tags != current_tags:
-                    remove_tags = [k for k in current_tags.keys() if k not in formatted_tags]
-                    add_tags = {k:v for k,v in formatted_tags.items() if v != current_tags.get(k)}
-                    if remove_tags:
-                        eh.add_op("remove_tags", remove_tags)
-                    if add_tags:
-                        eh.add_op("set_tags", add_tags)
-            # If there are no tags specified, make sure to remove any straggler tags
-            else:
-                if current_tags:
-                    eh.add_op("remove_tags", list(current_tags.keys()))
-
-        # If the load balancer does not exist, some wrong has happened. Probably don't permanently fail though, try to continue.
-        except client.exceptions.RuleNotFoundException:
-            eh.add_log("Rule Not Found", {"arn": cache_policy_id})
-            pass
-
-    except client.exceptions.PriorityInUseException as e:
-        eh.add_log(f"Priority {attributes.get('Priority')} assigned to this listener cache_policy already exists", {"error": str(e)}, is_error=True)
+    except client.exceptions.AccessDenied as e:
+        eh.add_log(f"You do you not have the required permissions to create the specified cache policy. Please update permissions and try again.", {"error": str(e)}, is_error=True)
         eh.perm_error(str(e), 20)
-    except client.exceptions.TooManyTargetGroupsException as e:
-        eh.add_log(f"AWS Quota for Target Groups reached. Please increase your quota and try again.", {"error": str(e)}, is_error=True)
+    except client.exceptions.CachePolicyAlreadyExists as e:
+        eh.add_log(f"The cache policy already exists. Please edit your component definition and try again.", {"error": str(e)}, is_error=True)
         eh.perm_error(str(e), 20)
-    except client.exceptions.TooManyRulesException as e:
-        eh.add_log(f"AWS Quota for Rules per Listener reached. Please increase your quota and try again.", {"error": str(e)}, is_error=True)
+    except client.exceptions.TooManyCachePolicies as e:
+        eh.add_log(f"AWS Quota for Cache Policies reached. Please increase your quota and try again.", {"error": str(e)}, is_error=True)
         eh.perm_error(str(e), 20)
-    except client.exceptions.TargetGroupAssociationLimitException as e:
-        eh.add_log(f"Too many Target Groups associated with the Rule. Please decrease the number of Target Groups associated to this Listener Rule and try again.", {"error": str(e)}, is_error=True)
+    except client.exceptions.TooManyHeadersInCachePolicy as e:
+        eh.add_log(f"Too many headers have been added to the Cache Policy. Please decrease the number of headers and try again.", {"error": str(e)}, is_error=True)
         eh.perm_error(str(e), 20)
-    except client.exceptions.ListenerNotFoundException as e:
-        eh.add_log(f"Listener provided for this Listener Rule was not found.", {"error": str(e)}, is_error=True)
+    except client.exceptions.TooManyCookiesInCachePolicy as e:
+        eh.add_log(f"Too many cookies have been added to the Cache Policy. Please decrease the number of cookies and try again.", {"error": str(e)}, is_error=True)
         eh.perm_error(str(e), 20)
-    except client.exceptions.TargetGroupNotFoundException as e:
-        eh.add_log(f"Target Group provided for this Listener Rule was not found.", {"error": str(e)}, is_error=True)
+    except client.exceptions.TooManyQueryStringsInCachePolicy as e:
+        eh.add_log(f"Too many query strings have been added to the Cache Policy. Please decrease the number of query strings and try again.", {"error": str(e)}, is_error=True)
         eh.perm_error(str(e), 20)
-    except client.exceptions.InvalidConfigurationRequestException as e:
-        eh.add_log(f"The configuration provided for this Listener Rule is invalid. Please enter valid configuration and try again.", {"error": str(e)}, is_error=True)
+    except client.exceptions.InvalidArgument as e:
+        eh.add_log("An invalid argument has been passed to the create cache policy call. Please check the arguments specified and try again.", {"error": str(e)}, is_error=True)
         eh.perm_error(str(e), 20)
-    except client.exceptions.TooManyRegistrationsForTargetIdException as e:
-        eh.add_log(f"Too many registrations for the Target provided. Please decrease the number of registrations for the Target and try again.", {"error": str(e)}, is_error=True)
-        eh.perm_error(str(e), 20)
-    except client.exceptions.TooManyTargetsException as e:
-        eh.add_log(f"Too many Targets provided for this Listener Rule. Please decrease the number of Targets for the Listener Rule and try again.", {"error": str(e)}, is_error=True)
-        eh.perm_error(str(e), 20)
-    except client.exceptions.TooManyActionsException as e:
-        eh.add_log(f"Too many Actions provided for this Listener Rule. Please decrease the number of Actions for the Listener Rule and try again.", {"error": str(e)}, is_error=True)
-        eh.perm_error(str(e), 20)
-    except client.exceptions.InvalidLoadBalancerActionException as e:
-        eh.add_log(f"Load Balancer action specified is invalid. Please change the Load Balancer action specified and try again.", {"error": str(e)}, is_error=True)
-        eh.perm_error(str(e), 20)
-    except client.exceptions.TooManyUniqueTargetGroupsPerLoadBalancerException as e:
-        eh.add_log(f"AWS Quota for Unique Target Groups per Load Balancer reached. Please increase your quota and try again.", {"error": str(e)}, is_error=True)
-        eh.perm_error(str(e), 20)
-    except client.exceptions.TooManyTagsException as e:
-        eh.add_log("Too Many Tags on Listener Rule. You may have 50 tags per resource.", {"error": str(e)}, is_error=True)
+    except client.exceptions.InconsistentQuantities as e:
+        eh.add_log("The number for the quantity of list items in either headers, cookies, or query strings does not match the amount passed. Please make sure each value specified is a valid value.", {"error": str(e)}, is_error=True)
         eh.perm_error(str(e), 20)
     except ClientError as e:
-        handle_common_errors(e, eh, "Error Creating Listener Rule", progress=20)
-
-
-@ext(handler=eh, op="remove_tags")
-def remove_tags():
-
-    remove_tags = eh.ops.get('remove_tags')
-    cache_policy_id = eh.state["cache_policy_id"]
-
-    try:
-        response = client.remove_tags(
-            ResourceArns=[cache_policy_id],
-            TagKeys=remove_tags
-        )
-        eh.add_log("Removed Tags", remove_tags)
-    except client.exceptions.ListenerNotFoundException:
-        eh.add_log("Listener Rule Not Found", {"arn": cache_policy_id})
-
-    except ClientError as e:
-        handle_common_errors(e, eh, "Error Removing Listener Rule Tags", progress=90)
-
-
-@ext(handler=eh, op="set_tags")
-def set_tags():
-
-    tags = eh.ops.get("set_tags")
-    cache_policy_id = eh.state["cache_policy_id"]
-    try:
-        response = client.add_tags(
-            ResourceArns=[cache_policy_id],
-            Tags=[{"Key": key, "Value": value} for key, value in tags.items()]
-        )
-        eh.add_log("Tags Added", response)
-
-    except client.exceptions.RuleNotFoundException as e:
-        eh.add_log("Listener Rule Not Found", {"error": str(e)}, is_error=True)
-        eh.perm_error(str(e), 90)
-    except client.exceptions.DuplicateTagKeysException as e:
-        eh.add_log(f"Duplicate Tags Found. Please remove duplicates and try again.", {"error": str(e)}, is_error=True)
-        eh.perm_error(str(e), 90)
-    except client.exceptions.TooManyTagsException as e:
-        eh.add_log(f"Too Many Tags on Listener Rule. You may have 50 tags per resource.", {"error": str(e)}, is_error=True)
-        eh.perm_error(str(e), 90)
-
-    except ClientError as e:
-        handle_common_errors(e, eh, "Error Adding Tags", progress=90)
+        handle_common_errors(e, eh, "Error Creating Cache Policy", progress=20)
 
 
 @ext(handler=eh, op="update_cache_policy")
 def update_cache_policy(attributes, region, prev_state):
-    modifiable_attributes = {i:attributes[i] for i in attributes if i not in ['Tags', "ListenerArn", "Priority"]}
-    modifiable_attributes["RuleArn"] = eh.state["cache_policy_id"]
-    try:
-        response = client.modify_cache_policy(**modifiable_attributes)
-        cache_policy = response.get("Rules")[0]
-        cache_policy_id = cache_policy.get("RuleArn")
-        eh.add_log("Updated Listener Rule", cache_policy)
-        existing_props = {
-            "arn": cache_policy_id,
-            "listener_arn": attributes.get("ListenerArn"),
-            "conditions": formatted_conditions_to_conditions(cache_policy.get("Conditions")),
-            "priority": cache_policy.get("Priority"),
-            "action_type": cache_policy.get("Actions", [{}])[0].get("Type"),
-            "target_group_arn": cache_policy.get("Actions", [{}])[0].get("TargetGroupArn"),
-        }
-        eh.add_props(existing_props)
-        eh.add_links({"Rule": gen_cache_policy_link(region, cache_policy_id=cache_policy_id)})
-
-    except client.exceptions.TargetGroupAssociationLimitException as e:
-        eh.add_log(f"Too many Target Groups associated with the Rule. Please decrease the number of Target Groups associated to this Listener Rule and try again.", {"error": str(e)}, is_error=True)
-        eh.perm_error(str(e), 20)
-    except client.exceptions.RuleNotFoundException as e:
-        eh.add_log(f"Listener Rule Not Found", {"error": str(e)}, is_error=True)
-        eh.perm_error(str(e), 20)
-    except client.exceptions.RuleNotFoundException as e:
-        eh.add_log(f"The Operation specified is not permitted", {"error": str(e)}, is_error=True)
-        eh.perm_error(str(e), 20)
-    except client.exceptions.TooManyRegistrationsForTargetIdException as e:
-        eh.add_log(f"Too many registrations for the Target provided. Please decrease the number of registrations for the Target and try again.", {"error": str(e)}, is_error=True)
-        eh.perm_error(str(e), 20)
-    except client.exceptions.TooManyTargetsException as e:
-        eh.add_log(f"Too many Targets provided for this Listener Rule. Please decrease the number of Targets for the Listener Rule and try again.", {"error": str(e)}, is_error=True)
-        eh.perm_error(str(e), 20)
-    except client.exceptions.TargetGroupNotFoundException as e:
-        eh.add_log(f"Target Group provided for this Listener Rule was not found.", {"error": str(e)}, is_error=True)
-        eh.perm_error(str(e), 20)
-    except client.exceptions.TooManyActionsException as e:
-        eh.add_log(f"Too many Actions provided for this Listener Rule. Please decrease the number of Actions for the Listener Rule and try again.", {"error": str(e)}, is_error=True)
-        eh.perm_error(str(e), 20)
-    except client.exceptions.InvalidLoadBalancerActionException as e:
-        eh.add_log(f"Load Balancer action specified is invalid. Please change the Load Balancer action specified and try again.", {"error": str(e)}, is_error=True)
-        eh.perm_error(str(e), 20)
-    except client.exceptions.TooManyUniqueTargetGroupsPerLoadBalancerException as e:
-        eh.add_log(f"AWS Quota for Unique Target Groups per Load Balancer reached. Please increase your quota and try again.", {"error": str(e)}, is_error=True)
-        eh.perm_error(str(e), 20)
-    except ClientError as e:
-        handle_common_errors(e, eh, "Error Creating Listener Rule", progress=20)
-
-@ext(handler=eh, op="update_cache_policy_priority")
-def update_cache_policy_priority(priority):
-
     cache_policy_id = eh.state["cache_policy_id"]
     try:
-        response = client.set_cache_policy_priorities(
-            RulePriorities=[
-                {
-                    'RuleArn': cache_policy_id,
-                    'Priority': int(priority) if priority else priority
-                },
-            ]
+        response = client.modify_cache_policy(
+            Id=cache_policy_id,
+            CachePolicyConfig=attributes
         )
-        eh.add_props({"Priority": priority})
-        eh.add_log(f"Updated Listener Rule Priority")
-    except client.exceptions.RuleNotFoundException:
-        eh.add_log("Listener Rule Not Found", {"cache_policy_id": cache_policy_id})
-        eh.perm_error(str(e), 30)
-    except client.exceptions.PriorityInUseException as e:
-        eh.add_log(f"Priority {priority} assigned to this listener cache_policy already exists", {"error": str(e)}, is_error=True)
-        eh.perm_error(str(e), 30)
-    except client.exceptions.OperationNotPermittedException as e:
-        eh.add_log(f"The operation of updating the priority on this listener cache_policy is not permitted.", {"error": str(e)}, is_error=True)
-        eh.perm_error(str(e), 30)
+        cache_policy = response.get("CachePolicy")
+        cache_policy_id = cache_policy.get("Id")
+        cache_policy_config = cache_policy.get("CachePolicyConfig")
+        eh.add_log("Updated Cache Policy", cache_policy)
+        existing_props = {
+            "id": cache_policy_id,
+            "name": cache_policy_config.get("Name"),
+            "description": cache_policy_config.get("Comment"),
+            "etag": response.get("ETag")
+        }
+        eh.add_props(existing_props)
+        eh.add_links({"Cache Policy": gen_cache_policy_link(region, cache_policy_id=cache_policy_id)})
+
+
+
+
+    except client.exceptions.AccessDenied as e:
+        eh.add_log(f"You do you not have the required permissions to update the specified cache policy. Please update permissions and try again.", {"error": str(e)}, is_error=True)
+        eh.perm_error(str(e), 20)
+    except client.exceptions.IllegalUpdate as e:
+        eh.add_log(f"The update attempted contains modifications that are not allowed.", {"error": str(e)}, is_error=True)
+        eh.perm_error(str(e), 20)
+    except client.exceptions.InvalidIfMatchVersion as e:
+        eh.add_log(f"The \"If-Match\" version is missing or not valid.", {"error": str(e)}, is_error=True)
+        eh.perm_error(str(e), 20)
+    except client.exceptions.NoSuchCachePolicy as e:
+        eh.add_log(f"Cache Policy Does Not Exist", {"error": str(e)}, is_error=True)
+        eh.perm_error(str(e), 20)
+    except client.exceptions.PreconditionFailed as e:
+        eh.add_log(f"The precondition for one or more of the request fields was not met.", {"error": str(e)}, is_error=True)
+        eh.perm_error(str(e), 20)
+    except client.exceptions.CachePolicyAlreadyExists as e:
+        eh.add_log(f"The cache policy already exists. Please edit your component definition and try again.", {"error": str(e)}, is_error=True)
+        eh.perm_error(str(e), 20)
+    except client.exceptions.TooManyCachePolicies as e:
+        eh.add_log(f"AWS Quota for Cache Policies reached. Please increase your quota and try again.", {"error": str(e)}, is_error=True)
+        eh.perm_error(str(e), 20)
+    except client.exceptions.TooManyHeadersInCachePolicy as e:
+        eh.add_log(f"Too many headers have been added to the Cache Policy. Please decrease the number of headers and try again.", {"error": str(e)}, is_error=True)
+        eh.perm_error(str(e), 20)
+    except client.exceptions.TooManyCookiesInCachePolicy as e:
+        eh.add_log(f"Too many cookies have been added to the Cache Policy. Please decrease the number of cookies and try again.", {"error": str(e)}, is_error=True)
+        eh.perm_error(str(e), 20)
+    except client.exceptions.TooManyQueryStringsInCachePolicy as e:
+        eh.add_log(f"Too many query strings have been added to the Cache Policy. Please decrease the number of query strings and try again.", {"error": str(e)}, is_error=True)
+        eh.perm_error(str(e), 20)
+    except client.exceptions.InvalidArgument as e:
+        eh.add_log("An invalid argument has been passed to the update cache policy call. Please check the arguments specified and try again.", {"error": str(e)}, is_error=True)
+        eh.perm_error(str(e), 20)
+    except client.exceptions.InconsistentQuantities as e:
+        eh.add_log("The number for the quantity of list items in either headers, cookies, or query strings does not match the amount passed. Please make sure each value specified is a valid value.", {"error": str(e)}, is_error=True)
+        eh.perm_error(str(e), 20)
     except ClientError as e:
-        handle_common_errors(e, eh, "Error Updating the Listener Rule Priority", progress=80)
+        handle_common_errors(e, eh, "Error Creating Cache Policy", progress=20)
 
 
 @ext(handler=eh, op="delete_cache_policy")
@@ -527,17 +366,33 @@ def delete_cache_policy():
     cache_policy_id = eh.state["cache_policy_id"]
     try:
         response = client.delete_cache_policy(
-            RuleArn=cache_policy_id
+            Id=cache_policy_id
         )
-        eh.add_log("Listener Rule Deleted", {"cache_policy_id": cache_policy_id})
-    except client.exceptions.RuleNotFoundException as e:
-        eh.add_log(f"Listener Rule Not Found", {"error": str(e)}, is_error=True)
+        eh.add_log("Cache Policy Deleted", {"cache_policy_id": cache_policy_id})
+
+    except client.exceptions.AccessDenied as e:
+        eh.add_log(f"You do you not have the required permissions to delete the specified cache policy. Please update permissions and try again.", {"error": str(e)}, is_error=True)
+        eh.perm_error(str(e), 20)
+    except client.exceptions.InvalidIfMatchVersion as e:
+        eh.add_log(f"The \"If-Match\" version is missing or not valid.", {"error": str(e)}, is_error=True)
+        eh.perm_error(str(e), 20)
+    except client.exceptions.NoSuchCachePolicy as e:
+        eh.add_log(f"Cache Policy Not Found", {"error": str(e)}, is_error=True)
         return 0
+    except client.exceptions.PreconditionFailed as e:
+        eh.add_log(f"The precondition for one or more of the request fields was not met.", {"error": str(e)}, is_error=True)
+        eh.perm_error(str(e), 20)
+    except client.exceptions.IllegalDelete as e:
+        eh.add_log(f"You cannot delete a managed policy.", {"error": str(e)}, is_error=True)
+        eh.perm_error(str(e), 20)
+    except client.exceptions.CachePolicyInUse as e:
+        eh.add_log(f"Cannot delete the cache policy because it is attached to one or more cache behaviors.", {"error": str(e)}, is_error=True)
+        eh.perm_error(str(e), 20)
     except ClientError as e:
-        handle_common_errors(e, eh, "Error Deleting Listener Rule", progress=80)
+        handle_common_errors(e, eh, "Error Deleting Cache Policy", progress=80)
     
 
 def gen_cache_policy_link(region, cache_policy_id):
-    return f"https://{region}.console.aws.amazon.com/ec2/home?region={region}#ListenerRuleDetails:cache_policyArn={cache_policy_id}"
+    return f"https://{region}.console.aws.amazon.com/cloudfront/v3/home?region={region}#/policies/cache/{cache_policy_id}"
 
 

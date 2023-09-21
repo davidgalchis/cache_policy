@@ -13,225 +13,146 @@
                     "Sid": "Vis",
                     "Effect": "Allow",
                     "Action": [
-                        "elasticloadbalancing:DeleteLoadBalancer",
-                        "elasticloadbalancing:DescribeLoadBalancerAttributes",
-                        "elasticloadbalancing:DescribeLoadBalancers",
-                        "elasticloadbalancing:RemoveTags",
-                        "elasticloadbalancing:CreateLoadBalancer",
-                        "elasticloadbalancing:DescribeTags",
-                        "elasticloadbalancing:AddTags",
-                        "elasticloadbalancing:SetSecurityGroups",
-                        "elasticloadbalancing:SetIpAddressType",
-                        "elasticloadbalancing:SetSubnets",
-                        "elasticloadbalancing:ModifyLoadBalancerAttributes"
+                        "cloudfront:CreateCachePolicy",
+                        "cloudfront:UpdateCachePolicy",
+                        "cloudfront:ListDistributionsByCachePolicyId",
+                        "cloudfront:GetCachePolicyConfig",
+                        "cloudfront:DeleteCachePolicy",
+                        "cloudfront:ListCachePolicies",
+                        "cloudfront:GetCachePolicy"
                     ],
                     "Resource": "*"
                 }]
             },
             "input": {
                 "type": "object",
-                "required_properties": ["subnets", "security_groups"],
                 "properties": {
                     "name": {
                         "type": "string",
-                        "description": "The name of the load balancer.",
+                        "description": "A unique name to identify the cache policy.",
                         "common": true
                     },
-                    "subnets": {
-                        "type": "array",
-                        "description": "The IDs of the subnets. You can specify only one subnet per Availability Zone. For Application Load Balancers you must specify subnets from at least two Availability Zones.",
-                        "items": {
-                            "type": "string",
-                            "description": "The ID of the subnet"
-                        },
+                    "description": {
+                        "type": "string",
+                        "description": "A comment to describe the cache policy. The comment cannot be longer than 128 characters.",
                         "common": true
                     },
-                    "security_groups": {
-                        "type": "array",
-                        "description": "The IDs of the security groups for the load balancer.",
+                    "default_ttl": {
+                        "type": "integer",
+                        "description": "The default amount of time, in seconds, that you want objects to stay in the CloudFront cache before CloudFront sends another request to the origin to see if the object has been updated. CloudFront uses this value as the object's time to live (TTL) only when the origin does not send Cache-Control or Expires headers with the object.",
+                        "default": 86400,
+                        "common": true
+                    },
+                    "min_ttl": {
+                        "type": "integer",
+                        "description": "The minimum amount of time, in seconds, that you want objects to stay in the CloudFront cache before CloudFront sends another request to the origin to see if the object has been updated.",
+                        "default": 1
+                    },
+                    "max_ttl": {
+                        "type": "integer",
+                        "description": "The maximum amount of time, in seconds, that objects stay in the CloudFront cache before CloudFront sends another request to the origin to see if the object has been updated. CloudFront uses this value only when the origin sends Cache-Control or Expires headers with the object.",
+                        "default": 86400
+                    },
+                    "enable_accept_encoded_gzip": {
+                        "type": "boolean",
+                        "description": "A flag that can affect whether the Accept-Encoding HTTP header is included in the cache key and included in requests that CloudFront sends to the origin.",
+                        "default": true
+                    },
+                    "enable_accept_encoded_brotli": {
+                        "type": "boolean",
+                        "description": "A flag that can affect whether the Accept-Encoding HTTP header is included in the cache key and included in requests that CloudFront sends to the origin.",
+                        "default": true
+                    },
+                    "header_behavior": {
+                        "type": "string",
+                        "description": "Determines which headers in viewer requests are included in the cache key and in requests that CloudFront sends to the origin.",
                         "common": true,
+                        "default": "none",
+                        "enum": ["none","whitelist"]
+                    },
+                    "headers": {
+                        "type": "array",
+                        "description": "Contains a list of HTTP header names related to the chosen header behavior.",
+                        "common": true,
+                        "default": [],
                         "items": {
                             "type": "string",
-                            "description": "The ID of the security group"
+                            "description": "The name of the HTTP header"
                         }
                     },
-                    "tags": {
-                        "type": "object",
-                        "description": "The tags to attach to this load balancer",
-                        "common": true
-                    },
-                    "scheme": {
+                    "cookie_behavior": {
                         "type": "string",
-                        "description": "Whether the load balancer IP addresses are resolvable publicly or only within a VPC.",
+                        "description": "Determines which cookies in viewer requests are included in the cache key and in requests that CloudFront sends to the origin.",
                         "common": true,
-                        "default": "internal",
-                        "enum": ["internal", "internet-facing"]
+                        "default": "none",
+                        "enum": ["none","whitelist","allExcept","all"]
                     },
-                    "load_balancer_type": {
-                        "type": "string",
-                        "description": "The type of load balancer.",
+                    "cookies": {
+                        "type": "array",
+                        "description": "Contains a list of cookie names related to the chosen cookie behavior.",
                         "common": true,
-                        "default": "application",
-                        "enum": ["application", "network", "gateway"]
+                        "default": [],
+                        "items": {
+                            "type": "string",
+                            "description": "The name of the cookie"
+                        }
                     },
-                    "ip_address_type": {
+                    "query_string_behavior": {
                         "type": "string",
-                        "description": "The type of load balancer.",
+                        "description": "Determines which URL query strings in viewer requests are included in the cache key and in requests that CloudFront sends to the origin.",
                         "common": true,
-                        "default": "ipv4",
-                        "enum": ["ipv4", "dualstack"]
+                        "default": "none",
+                        "enum": ["none","whitelist","allExcept","all"]
                     },
-                    "deletion_protection_enabled": {
-                        "type": "boolean",
-                        "description": "Indicates whether deletion protection is enabled.",
-                        "default": false
-                    },
-                    "load_balancing_cross_zone_enabled": {
-                        "type": "boolean",
-                        "description": "Indicates whether cross-zone load balancing is enabled.",
-                        "default": true
-                    },
-                    "access_logs_s3_enabled": {
-                        "type": "boolean",
-                        "description": "Indicates whether access logs are enabled.",
-                        "default": false
-                    },
-                    "access_logs_s3_bucket": {
-                        "type": "string",
-                        "description": "The name of the S3 bucket for the access logs."
-                    },
-                    "access_logs_s3_prefix": {
-                        "type": "string",
-                        "description": "The prefix for the location in the S3 bucket for the access logs."
-                    },
-                    "ipv6_deny_all_igw_traffic": {
-                        "type": "boolean",
-                        "description": "Blocks internet gateway (IGW) access to the load balancer.",
-                        "default": false
-                    },
-                    "idle_timeout_timeout_seconds": {
-                        "type": "integer",
-                        "description": "The idle timeout value, in seconds.",
-                        "default": 60,
-                        "minimum": 1,
-                        "maximum": 4000
-                    },
-                    "routing_http_desync_mitigation_mode": {
-                        "type": "string",
-                        "description": "Determines how the load balancer handles requests that might pose a security risk to your application.",
-                        "default": "defensive",
-                        "enum": ["monitor", "defensive", "strictest"]
-                    },
-                    "routing_http_drop_invalid_header_fields_enabled": {
-                        "type": "boolean",
-                        "description": "Indicates whether HTTP headers with invalid header fields are removed by the load balancer (true) or routed to targets (false)",
-                        "default": false
-                    },
-                    "routing_http_preserve_host_header_enabled": {
-                        "type": "boolean",
-                        "description": "Indicates whether the Application Load Balancer should preserve the Host header in the HTTP request and send it to the target without any change.",
-                        "default": false
-                    },
-                    "routing_http_x_amzn_tls_version_and_cipher_suite_enabled": {
-                        "type": "boolean",
-                        "description": "Indicates whether the two headers (x-amzn-tls-version and x-amzn-tls-cipher-suite), which contain information about the negotiated TLS version and cipher suite, are added to the client request before sending it to the target.",
-                        "default": false
-                    },
-                    "routing_http_xff_client_port_enabled": {
-                        "type": "boolean",
-                        "description": "Indicates whether the X-Forwarded-For header should preserve the source port that the client used to connect to the load balancer.",
-                        "default": false
-                    }, 
-                    "routing_http_xff_header_processing_mode": {
-                        "type": "boolean",
-                        "description": "Enables you to modify, preserve, or remove the X-Forwarded-For header in the HTTP request before the Application Load Balancer sends the request to the target.",
-                        "default": "append",
-                        "enum": ["append", "preserve", "remove"]
-                    }, 
-                    "routing_http2_enabled": {
-                        "type": "boolean",
-                        "description": "Indicates whether HTTP/2 is enabled.",
-                        "default": true
-                    },
-                    "waf_fail_open_enabled": {
-                        "type": "boolean",
-                        "description": "Indicates whether to allow a WAF-enabled load balancer to route requests to targets if it is unable to forward the request to Amazon Web Services WAF. ",
-                        "default": false
+                    "query_strings": {
+                        "type": "array",
+                        "description": "Contains a list of URL query string names related to the chosen query string behavior.",
+                        "common": true,
+                        "default": [],
+                        "items": {
+                            "type": "string",
+                            "description": "The name of the URL query string"
+                        }
                     }
                 }
             },
             "props": {
+                "id": {
+                    "type": "string",
+                    "description": "The ID of the cache policy"
+                },
                 "name": {
                     "type": "string",
-                    "description": "The name of the load balancer."
+                    "description": "The name of the cache policy"
                 },
-                "arn": {
+                "description": {
                     "type": "string",
-                    "description": "The Amazon Resource Name (ARN) of the load balancer."
+                    "description": "The description of the cache policy"
                 },
-                "vpc_id": {
+                "etag": {
                     "type": "string",
-                    "description": "The VPC ID of the target group."
-                },
-                "dns_name": {
-                    "type": "integer",
-                    "description": "The DNS name of the load balancer."
-                },
-                "canonical_hosted_zone_id": {
-                    "type": "string",
-                    "description": "The ID of the Amazon Route 53 hosted zone associated with the load balancer."
-                },
-                "load_balancer_type": {
-                    "type": "string",
-                    "description": "The type of load balancer."
-                },
-                "security_groups": {
-                    "type": "array",
-                    "description": "The IDs of the security groups for the load balancer.",
-                    "items": {
-                        "type": "string",
-                        "description": "The ID of the security group."
-                    }
-                },
-                "subnets": {
-                    "type": "array",
-                    "description": "Subnets associated with the load balancer. You can specify one subnet per Availability Zone.",
-                    "items": {
-                        "type": "string",
-                        "description": "The ID of the subnet"
-                    }
-                },
-                "scheme": {
-                    "type": "string",
-                    "description": "Whether the load balancer IP addresses are resolvable publicly or only within a VPC."
-                },
-                "tags": {
-                    "type": "object",
-                    "description": "The tags attached to this load balancer."
+                    "description": "The current version of the cache policy."
                 }
-
             },
             "examples": [
                 {
-                    "displayname": "Application Load Balancer",
-                    "notes": "Add the subnet and security group values for your VPC for a standard Application Load Balancer configuration. Default configuration is set to be internal to a VPC with the IPV4 IP address type.",
+                    "displayname": "Cache Policy",
+                    "notes": "A custom cache policy with no header, query string, or cookie caching.",
                     "definition": {
-                        "type": "&alb.load_balancer",
-                        "subnets": ["subnet-1234567890EXAMPLE", "subnet-1234567890EXAMPLE"],
-                        "security_groups": ["sg-1234567890EXAMPLE"]
+                        "type": "&cloudfront.cache_policy"
                     }
                 },
                 {
-                    "displayname": "Application Load Balancer with Tags",
-                    "notes": "Add the \"tags\" parameter with a dictionary to add tags to the load balancer.",
+                    "displayname": "Cache Policy",
+                    "notes": "Custom cache policy with complex caching behaviors.",
                     "definition": {
-                        "type": "&alb.load_balancer",
-                        "subnets": ["subnet-1234567890EXAMPLE", "subnet-1234567890EXAMPLE"],
-                        "security_groups": ["sg-1234567890EXAMPLE"],
-                        "tags": {
-                            "service": "user_service",
-                            "team": "applications"
-                        }
+                        "type": "&cloudfront.cache_policy",
+                        "default_ttl": 2592000,
+                        "header_behavior": "whitelist",
+                        "headers": ["Version"],
+                        "cookie_behavior": "all",
+                        "query_string_behavior": "allExcept",
+                        "query_strings": ["customer_id"]
                     }
                 }
             ]
