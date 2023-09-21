@@ -303,7 +303,7 @@ def create_cache_policy(attributes, region, prev_state):
 def update_cache_policy(attributes, region, prev_state):
     cache_policy_id = eh.state["cache_policy_id"]
     try:
-        response = client.modify_cache_policy(
+        response = client.update_cache_policy(
             Id=cache_policy_id,
             CachePolicyConfig=attributes
         )
