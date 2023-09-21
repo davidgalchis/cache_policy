@@ -145,7 +145,7 @@ def lambda_handler(event, context):
         #   (sometimes you start with GET STATE if you need to make a call for the identifier)
         elif event.get("op") == "delete":
             eh.add_op("delete_cache_policy")
-            eh.add_state({"cache_policy_id": prev_state["props"]["id"]})
+            eh.add_state({"cache_policy_id": prev_state["props"]["id"], "cache_policy_etag": prev_state["props"]["etag"]})
 
         # The ordering of call declarations should generally be in the following order
         # GET STATE
