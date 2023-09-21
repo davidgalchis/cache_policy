@@ -373,10 +373,12 @@ def delete_cache_policy():
     cache_policy_id = eh.state["cache_policy_id"]
     cache_policy_etag = eh.state["cache_policy_etag"]
     try:
-        response = client.delete_cache_policy(
-            Id=cache_policy_id,
-            IfMatch=cache_policy_etag
-        )
+        payload = {
+            "Id": cache_policy_id
+        }
+        if cache_policy_etag:
+            payload["IfMatch"] = cache_policy_etag
+        response = client.delete_cache_policy(**payload)
         eh.add_log("Cache Policy Deleted", {"cache_policy_id": cache_policy_id, "cache_policy_etag": cache_policy_etag})
 
     except client.exceptions.AccessDenied as e:
