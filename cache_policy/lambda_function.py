@@ -198,21 +198,23 @@ def get_cache_policy(attributes, region, prev_state):
     if existing_cache_policy_id:
         # Try to get the cache_policy. If you succeed, record the props and links from the current cache_policy
         try:
-            response = client.get_cache_policy(
-                Id=existing_cache_policy_id
-            )
+            payload = {
+                "Id": existing_cache_policy_id
+            }
+            response = client.get_cache_policy(**payload)
             cache_policy_to_use = None
             if response and response.get("CachePolicy"):
                 eh.add_log("Got Cache Policy", response)
                 cache_policy_to_use = response.get("CachePolicy")
                 cache_policy_id = cache_policy_to_use.get("Id")
+                cache_policy_etag = response.get("ETag")
                 cache_policy_config = cache_policy_to_use.get("CachePolicyConfig")
-                eh.add_state({"cache_policy_id": cache_policy_id, "region": region})
+                eh.add_state({"cache_policy_id": cache_policy_id, "etag": cache_policy_etag, "region": region})
                 existing_props = {
                     "id": cache_policy_id,
                     "name": cache_policy_config.get("Name"),
                     "description": cache_policy_config.get("Comment"),
-                    "etag": response.get("ETag")
+                    "etag": cache_policy_etag
                 }
                 eh.add_props(existing_props)
                 eh.add_links({"Cache Policy": gen_cache_policy_link(region, cache_policy_id=cache_policy_id)})
@@ -257,7 +259,7 @@ def create_cache_policy(attributes, region, prev_state):
         cache_policy_config = cache_policy.get("CachePolicyConfig")
 
         eh.add_log("Created Cache Policy", cache_policy)
-        eh.add_state({"cache_policy_id": cache_policy_id, "region": region})
+        eh.add_state({"cache_policy_id": cache_policy_id, "etag": cache_policy_etag, "region": region})
         props_to_add = {
             "id": cache_policy_id,
             "name": cache_policy_config.get("Name"),
@@ -302,9 +304,11 @@ def create_cache_policy(attributes, region, prev_state):
 @ext(handler=eh, op="update_cache_policy")
 def update_cache_policy(attributes, region, prev_state):
     cache_policy_id = eh.state["cache_policy_id"]
+    cache_policy_etag = eh.state["cache_policy_etag"]
     try:
         response = client.update_cache_policy(
             Id=cache_policy_id,
+            IfMatch=cache_policy_etag,
             CachePolicyConfig=attributes
         )
         cache_policy = response.get("CachePolicy")
@@ -366,11 +370,13 @@ def update_cache_policy(attributes, region, prev_state):
 @ext(handler=eh, op="delete_cache_policy")
 def delete_cache_policy():
     cache_policy_id = eh.state["cache_policy_id"]
+    cache_policy_etag = eh.state["cache_policy_etag"]
     try:
         response = client.delete_cache_policy(
-            Id=cache_policy_id
+            Id=cache_policy_id,
+            IfMatch=cache_policy_etag
         )
-        eh.add_log("Cache Policy Deleted", {"cache_policy_id": cache_policy_id})
+        eh.add_log("Cache Policy Deleted", {"cache_policy_id": cache_policy_id, "cache_policy_etag": cache_policy_etag})
 
     except client.exceptions.AccessDenied as e:
         eh.add_log(f"You do you not have the required permissions to delete the specified cache policy. Please update permissions and try again.", {"error": str(e)}, is_error=True)
