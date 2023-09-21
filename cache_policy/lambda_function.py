@@ -249,7 +249,9 @@ def get_cache_policy(attributes, region, prev_state):
 def create_cache_policy(attributes, region, prev_state):
 
     try:
-        response = client.create_cache_policy(**attributes)
+        response = client.create_cache_policy(
+            CachePolicyConfig=attributes
+        )
         cache_policy = response.get("Cache Policy")
         cache_policy_id = cache_policy.get("Id")
         cache_policy_config = cache_policy.get("CachePolicyConfig")
